@@ -85,7 +85,7 @@ class FTS3(object):
         self.ProxyFile = proxy_file
         self.Context = Context(url_head, self.ProxyFile, None, verify=False)
 
-    def submit(self, src_url, dst_url, metadata = None, overwrite=True, **meta_args):
+    def submit(self, src_url, dst_url,   metadata = None, overwrite=True, adler32_checksum = '', activity = '', **meta_args):
         params = {"overwrite":overwrite}
         request = {
             "params": params,
@@ -96,6 +96,14 @@ class FTS3(object):
                 }
             ]    
         }
+
+        if adler32_checksum:
+            request["files"][0]["checksum"] = "ADLER32:" + adler32_checksum
+            request["params"]["verify_checksum"] = "target"
+
+        if activity:
+            request["files"][0]["activity"] = activity
+
         if metadata or meta_args:
             metadata = (metadata or {}).copy()
             metadata.update(meta_args)

@@ -48,6 +48,7 @@ class FileMoverTask(Task, Logged):
         self.TransferTimeout = config.TransferTimeout
         self.TransferTime = None
         self.TransferStarted = None
+        self.Activity = config.Activity
         self.log("created for:", filedesc.Path)
 
     def __str__(self):
@@ -89,14 +90,29 @@ class FileMoverTask(Task, Logged):
             self.failed("Metadata download failed: %s" % (output,))
             return
 
-        json_text = open(meta_tmp, "r").read()
+        with  open(meta_tmp, "r") is mtf:
+            json_text = mtf.read()
         
         self.debug("original metadata JSON: %s" % (json_text,))
         
+        adler32_checksum = ''
         try:    
             metadata = json.loads(json_text)
             if ("file_size" not in metadata and "size" not in metadata) or ("checksum" not in metadata and "checksums" not in metadata):
                 return self.failed("metadata does not include size or checksum")
+
+            if "checksum" in metadata:
+                adler32_checksum = metadata["checksum"]
+            if "checksums" in metadata:
+                adler32_checksum = metadata["checksums"]["adler32"]
+            if isinstance(adler32_checksum, list) and adler32_checksum:
+                 adler32_checksum = adler32_checksum[0]
+
+            if ':' in adler32_checksum:
+                ctype, value = adler32_checksum.split(':', 1)
+                assert ctype == "adler32"
+                adler32_checksum = value
+
         except: 
             self.log_record("metadata parsing error: %s" % (traceback.format_exc(),))
             self.log_record("metadata file contents -------\n%s\n----- end if metadata file contents -----" % (open(meta_tmp, "r").read(),))
@@ -114,7 +130,7 @@ class FileMoverTask(Task, Logged):
         # transfer data
         #
         self.updateStatus("transferring data")
-        request = self.FTSClient.submit(self.FileSrcURL, self.FileDstURL)
+        request = self.FTSClient.submit(self.FileSrcURL, self.FileDstURL, adler32_checksum=adler32_checksum, activity=Activity)
         done = request.wait(self.TransferTimeout)
         if done:
             if request.Failed:
@@ -131,7 +147,7 @@ class FileMoverTask(Task, Logged):
         # transfer metadata
         #
         self.updateStatus("transferring metadata")
-        request = self.FTSClient.submit(self.MetaSrcURL, self.MetaDstURL)
+        request = self.FTSClient.submit(self.MetaSrcURL, self.MetaDstURL, activity=activity)
         self.debug("Metadata transfer request submitted:", request.JobID)
         done = request.wait(self.TransferTimeout)
         if done:
@@ -214,6 +230,7 @@ class Configuration(object):
         config.read(filename)
         self.Config = config
         #self.CopyTemplate = config.get("Mover", "CopyTemplate")
+        self.Activity = config.get("Mover", "Activity", "")
         self.DownloadTemplate = config.get("Mover", "DownloadTemplate")
         #self.UploadTemplate = config.get("Mover", "UploadTemplate")
         self.DeleteTemplate = config.get("Mover", "DeleteTemplate")
