@@ -15,6 +15,8 @@ import json
 import os
 import urllib3
 import requests
+import random
+import time
 
 from .exceptions import *
 
@@ -87,10 +89,8 @@ class Request:
             raise FailedDependency("Failed dependency")
         elif 404 < code < 500:
             raise ClientError(str(code))
-        elif code == 503:
-            raise TryAgain(str(code))
         elif code >= 500:
-            raise ServerError(str(code))
+            raise TryAgain(str(code))
 
     def method(self, method, url, body=None, headers=None, user=None, passw=None):
         _headers = {"Accept": "application/json"}
@@ -108,22 +108,38 @@ class Request:
         if self.verify and self.capath:
             self.verify = self.capath
 
-        response = requests.request(
-            method=method,
-            url=str(url),
-            data=body,
-            headers=_headers,
-            verify=self.verify,
-            timeout=(self.connectTimeout, self.timeout),
-            cert=(self.ucert, self.ukey),
-            auth=auth,
-        )
-        """
-        verify: (optional) Either a boolean, in which case it controls whether we verify
-            the server's TLS certificate, or a string, in which case it must be a path
-            to a CA bundle to use. Defaults to ``True``.
-        """
+        retrying = True
+        delaywin = 4
 
-        self._handle_error(url, response.status_code, response.text)
+        while retrying:
+ 
+            retrying = False
+            try:
+                response = requests.request(
+                    method=method,
+                    url=str(url),
+                    data=body,
+                    headers=_headers,
+                    verify=self.verify,
+                    timeout=(self.connectTimeout, self.timeout),
+                    cert=(self.ucert, self.ukey),
+                    auth=auth,
+                )
+                """
+                verify: (optional) Either a boolean, in which case it controls whether we verify
+                    the server's TLS certificate, or a string, in which case it must be a path
+                    to a CA bundle to use. Defaults to ``True``.
+                """
+
+                self._handle_error(url, response.status_code, response.text)
+
+            except TryAgain as e:
+                # good old randomized exponential backoff...
+                if delaywin > 512:
+                     # not waiting more than 10 minutes
+                     raise e
+                retrying = True
+                delaywin = delaywin * 2
+                time.sleep(random.randint(2, delaywin))
 
         return str(response.text)
