@@ -249,13 +249,20 @@ class Configuration(object):
         
         self.NotifierHTTPPort = int(config.get("Scanner", "NotifierHTTPPort", 8090))
 
-        self.ScanLocations = config.get("Scanner", "Locations", "").split()
-        self.ScanServers = config.get("Scanner", "Servers", "local").split()
+        self.ScanLocations = config.get("Scanner", "Locations", "").split(" ")
+        self.ScanServers = config.get("Scanner", "Servers", "local").split(" ")
 
-        self.ScanServersLocations = [
-            (server, location) for server in self.ScanServers
-                                for location in self.ScanLocations
-        ]
+        self.ScanServersLocations = []
+        for serv in self.ScanServers:
+             servkey = "Server_" + serv.replace(".","_").replace("-","_") + "_Locations"
+             loclist = config.get("Scanner", servkey, "")
+             if loclist:
+                  loclist = loclist.split(" ")
+             else:
+                  loclist = self.ScanLocations
+             
+             for loc in loclist:
+                   self.ScanServersLocations.append( (serv, loc) )
 
         self.ScanRecursive = config.get("Scanner", "Recursive", "no") == "yes"
 
@@ -615,6 +622,10 @@ if __name__ == "__main__":
         print("Configuration file must be specified either with -c or using env. variable MOVER_CFG")
     config = Configuration(config)
     
+    # when testing config bits..
+    # print("Scanned locations: %s" % (config.ScanServersLocations,))
+    # exit(0)
+
     log_file = opts.get("-l", config.LogFile)
     logs.init_logger(log_file, debug_enabled = "-d" in opts)
 
@@ -624,7 +635,6 @@ if __name__ == "__main__":
 
     manager = Manager(config, held, history_db)
     
-    #debug("Scanned locations: %s" % (config.ScanServersLocations,))
     
     home = os.path.dirname(__file__)
     gui = GUIThread(config, manager, manager.ScanMgr, history_db)
